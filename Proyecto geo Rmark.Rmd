@@ -1,0 +1,295 @@
+---
+title: "Proyecto 1 DGE"
+output: html_document
+date: '2022-04-22'
+---
+
+# Planteamiento del área de estudio
+
+### *Nosotros como grupo nos preguntamos sobre qué factores podrían representar que un país o continente tiene una estabilidad económica o si existe algún tipo de correlación con algunos factores espaciales. Para eso utilizaremos el set de datos de rnaturalearth, de donde en conjunto con los datos countries y airports, analisaremos si es que existe algún patrón, que nos permita confirmar si la presencia de varios aeropuertos por contienente tiene alguna correlación con el status económico del continente en general*
+
+# Importamos las librerias a usar
+
+```{r setup, include=FALSE}
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sp)
+library(ggplot2)
+library(magrittr)
+pacman::p_load(mapview, sf, tidyverse, tmap, sf)
+```
+
+# Guardamos los datos en variables
+
+```{r}
+airport <- ne_download(scale = 10, type = 'airports', category = 'cultural')
+aeros<-as.data.frame(airport)#Hacemos un dataframe que nos ayude a calculos futuros
+
+world = ne_countries(returnclass = 'sf')
+```
+
+# Limpieza de datos
+
+### *Para la limpieza de datos haremos lo siguiente, selccionar las variables de estudio, en donde para el caso de countries usaremos economy e income_grp, las cuales nos ayudaran a calcular estadísticas por continente y saber el estatus economico.* 
+
+### *Luego transformaremos nuestras variables categóricas a numéricas para poder hacer calculos, como correlación o los mencionados anteriormente.* 
+
+### *Nos encargaremos también de crear los set de datos para cada continente utilizando un filtro.*
+
+```{r}
+world$income_grp <- as.numeric(factor(world$income_grp, 
+                                      levels=c("1. High income: OECD", "2. High income: nonOECD", "3. Upper middle income",
+                                               "4. Lower middle income", "5. Low income")))
+
+world$economy <- as.numeric(factor(world$economy, 
+                                      levels=c("1. Developed region: G7", "2. Developed region: nonG7", "3. Emerging region: BRIC",
+                                               "4. Emerging region: MIKT", "	
+5. Emerging region: G20",'6. Developing region','7. Least developed region')))
+
+# Agrupamos por contiente
+europa = world %>% 
+  filter(continent == 'Europe')
+
+samerica = world %>% 
+  filter(continent == 'South America')
+
+namerica = world %>% 
+  filter(continent == 'North America')
+
+asia = world %>% 
+  filter(continent == 'Asia')
+
+africa = world %>% 
+  filter(continent == 'Africa')
+```
+
+# Creamos variables que nos permitan calcular relaciones entre la economia e ingresos de cada continente
+
+### *Al trabajar con una base de datos que contempla a todo el mundo, dividimos los datos en diversas variables con el fin de poder obtener la media de la econmia de cada continente, y de los ingresos de cada continente por separada, permitiendonos poder tener un mayor manipulación de estos datos.*
+
+```{r}
+####################
+#------media de economia e ingresos--------#
+#europa
+mediaEe = mean(europa$economy)
+mediaEi = mean(europa$income_grp)
+#america del sur
+mediaSAe = mean(na.omit(samerica$economy))
+mediaSAi = mean(na.omit(samerica$income_grp))
+#america del norte
+mediaNAe = mean(na.omit(namerica$economy))
+mediaNAi = mean(na.omit(namerica$income_grp))
+#asia
+mediaAse = mean(na.omit(asia$economy))
+mediaAsi = mean(na.omit(asia$income_grp))
+#africa
+mediaAfe = mean(na.omit(africa$economy))
+mediaAfi = mean(na.omit(africa$income_grp))
+#Listas con los datos
+media_economia = c(mediaEe,mediaSAe,mediaNAe,mediaAse,mediaAfe)
+media_ingresos = c(mediaEi,mediaSAi,mediaNAi,mediaAsi,mediaAfi)
+####################
+```
+
+# Definimos los límites lan y lat de cada continente y así capturamos un aproximado de la cantidad de aeropuertos totales que tienen
+
+### *El fin de definir estos rangos para cada continente es filtrar la data de aeropuertos por zonas, de manera de aproximarnos lo más posible a la cantidad real existente de aeropuertos por continente.*
+
+```{r}
+#--------------AEROPUERTOS---------------
+rangoE = aeros%>% #Delimitamos el cuadrado que toma toda europa
+  filter(coords.x1 >= -25 & coords.x1<=182 & coords.x2 <= 80 & coords.x2 >=28)
+
+rangoSA = aeros%>% #Delimitamos el cuadrado que toma toda america del sur
+  filter(coords.x1 >= -116 & coords.x1<=8 & coords.x2 <= 27 & coords.x2 >=-57)
+
+rangoNA =aeros%>% #Delimitamos el cuadrado que toma toda norte america
+  filter(coords.x1 >= -176 & coords.x1<=-20 & coords.x2 <= 83 & coords.x2 >=4)
+
+rangoAs =aeros%>% #Delimitamos el cuadrado que toma toda asia
+  filter(coords.x1 >= 24 & coords.x1<=144 & coords.x2 <= 54 & coords.x2 >=11)
+
+rangoAf = aeros%>% #Delimitamos el cuadrado que toma toda africa
+  filter(coords.x1 >= -20 & coords.x1<=53 & coords.x2 <= 35 & coords.x2 >=-37)
+
+#Hacemos un conteo de la cantidad de aeropuertos por continente, estos tienen un error de +20 a +30
+CrangoE=count(rangoE)
+CrangoSA=count(rangoSA)
+CrangoNA=count(rangoNA)
+CrangoAs=count(rangoAs)
+CrangoAf=count(rangoAf)
+
+aeropuetos_total = c(CrangoE,CrangoSA,CrangoNA,CrangoAs,CrangoAf) #Guardamos en una lista la cantidad de aeropuertos por continente
+```
+
+# Análisis correlacional
+
+### *En el analisís correlacional nos enfocamos en comprobar la existencia de correlación entre la cantidad de aeropueros, y las variables economía e ingresos. Como se verá a continuación,  Mediante estos procesos se pevidencia una relación directa existente entre las variables, mediante los gráficos y los valores de correlación.*
+
+```{r}
+#Histogramas
+par(mfrow = c(1, 2))
+hist(x = world$income_grp,col='light blue',main = 'Frecuencia de nivel de ingresos',xlab='nivel de ingresos',ylab='frecuencia')
+hist(x = world$economy,col='light blue',main = 'Frecuencia de nivel de economia',xlab='nivel de economia',ylab='frecuencia')
+```
+
+```{r}
+par(mfrow = c(1, 1))
+#Relación entre ingresos y economia en el mundo
+plot(world$income_grp,pch=19,world$economy,col='blue',main = 'Correlación economia vs ingresos',xlab='ingresos',ylab='economy')
+abline(lm(world$economy ~ world$income_grp), col = "red", lwd = 3)
+```
+
+```{r}
+#correlacion entre economy e income del mundo
+correlacion = cor(media_economia,media_ingresos)
+correlacion
+```
+
+```{r}
+par(mfrow = c(1, 1))
+#Correlación entre economia y cantidad de aeropuertos
+plot(as.numeric(media_economia),as.numeric(aeropuetos_total), col='blue',lwd=5,xlab='economia',ylab='total de aeropuertos',main = 'Correlación economia vs total de aeropuertos')
+abline(lm(as.numeric(aeropuetos_total) ~ as.numeric(media_economia)),col = "red", lwd = 3)
+
+par(mfrow = c(1, 1))
+#Correlación entre ingresos y cantidad de aeropuertos
+plot(as.numeric(media_ingresos),as.numeric(aeropuetos_total), col='blue',lwd=5,xlab='ingresos',ylab='total de aeropuertos',main = 'Correlación ingresos vs total de aeropuertos')
+abline(lm(as.numeric(aeropuetos_total) ~ as.numeric(media_ingresos)), col = "red", lwd = 3)
+```
+
+```{r}
+#Correlación total aeropuertos mundo
+#correlacion entre cantidad de aeropuertos e income en el mundo
+correlacion_mediaing_aero = cor(media_ingresos, as.numeric(aeropuetos_total))
+#correlacion entre cantidad de aeropuertos y economia en el mundo
+correlacion_mediaeco_aero = cor(media_economia, as.numeric(aeropuetos_total))
+par(mfrow = c(1, 2))
+#graficos
+plot(as.numeric(media_ingresos), as.numeric(aeropuetos_total), col= "blue", lwd=5, xlab= "ingresos", ylab = "total aeropuertos")
+abline(lm(as.numeric(aeropuetos_total) ~ as.numeric(media_ingresos)), col = "red", lwd = 3)
+
+
+plot(as.numeric(media_economia), as.numeric(aeropuetos_total), col= "blue", lwd=5, xlab= "economia", ylab = "total aeropuertos")
+abline(lm(as.numeric(aeropuetos_total) ~ as.numeric(media_economia)), col = "red", lwd = 3)
+```
+
+```{r}
+#Correlación aeropuertos europa
+#correlacion entre cantidad de aeropuertos e income en el europa
+correlacion_euing_aero = cor(mediaEi, as.numeric(CrangoE)) 
+#correlacion entre cantidad de aeropuertos y economia en el europa
+correlacion_eueco_aero = cor(mediaEe, as.numeric(CrangoE))
+
+#graficos
+par(mfrow = c(1, 2))
+plot(as.numeric(mediaEi), as.numeric(CrangoE), col= "blue", lwd=5, xlab= "ingresos", ylab = "total aeropuertos")
+plot(as.numeric(mediaEe), as.numeric(CrangoE), col= "blue", lwd=5, xlab= "economia", ylab = "total aeropuertos")
+```
+
+```{r}
+#Correlación aeropuertos sur america
+#correlacion entre cantidad de aeropuertos e income en el sur america
+correlacion_amsing_aero = cor(mediaSAi, as.numeric(CrangoSA))
+#correlacion entre cantidad de aeropuertos y economia en el sur america
+correlacion_amseco_aero = cor(mediaSAe, as.numeric(CrangoSA)) 
+
+#graficos
+par(mfrow = c(1, 2))
+plot(as.numeric(mediaSAi), as.numeric(CrangoSA), col= "blue", lwd=5, xlab= "ingresos", ylab = "total aeropuertos")
+plot(as.numeric(mediaSAe), as.numeric(CrangoSA), col= "blue", lwd=5, xlab= "economia", ylab = "total aeropuertos")
+```
+
+```{r}
+#Correlación aeropuertos norte america
+#correlacion entre cantidad de aeropuertos e income en el norte america
+correlacion_amning_aero = cor(mediaNAi, as.numeric(CrangoNA))
+#correlacion entre cantidad de aeropuertos y economia en el norte america
+correlacion_amneco_aero = cor(mediaNAe, as.numeric(CrangoNA)) 
+
+#graficos
+par(mfrow = c(1, 2))
+plot(as.numeric(mediaNAi), as.numeric(CrangoNA), col= "blue", lwd=5, xlab= "ingresos", ylab = "total aeropuertos")
+plot(as.numeric(mediaNAe), as.numeric(CrangoNA), col= "blue", lwd=5, xlab= "economia", ylab = "total aeropuertos")
+```
+
+```{r}
+#Correlación aeropuertos asia
+#correlacion entre cantidad de aeropuertos e income en el asia
+correlacion_asiaing_aero = cor(mediaAsi, as.numeric(CrangoAs)) 
+#correlacion entre cantidad de aeropuertos y economia en el asia
+correlacion_asiaeco_aero = cor(mediaAse, as.numeric(CrangoAs))
+
+#graficos
+par(mfrow = c(1, 2))
+plot(as.numeric(mediaAsi), as.numeric(CrangoAs), col= "blue", lwd=5, xlab= "ingresos", ylab = "total aeropuertos")
+plot(as.numeric(mediaAse), as.numeric(CrangoAs), col= "blue", lwd=5, xlab= "economia", ylab = "total aeropuertos")
+```
+
+```{r}
+#Correlación aeropuertos africa
+#correlacion entre cantidad de aeropuertos e income en el africa
+correlacion_africaing_aero = cor(mediaAfi, as.numeric(CrangoAf))
+#correlacion entre cantidad de aeropuertos e economia en el africa
+correlacion_africaeco_aero = cor(mediaAfe, as.numeric(CrangoAf)) 
+
+#graficos
+par(mfrow = c(1, 2))
+plot(as.numeric(mediaAfi), as.numeric(CrangoAf), col= "blue", lwd=5, xlab= "ingresos", ylab = "total aeropuertos")
+plot(as.numeric(mediaAfe), as.numeric(CrangoAf), col= "blue", lwd=5, xlab= "economia", ylab = "total aeropuertos")
+```
+
+# Análisis cartográfico
+
+### *Por último en el analisis cartografico realizamos diversos plots de todos los continentes con su respectiva cantidad de aeropuertos, además de mostrar los valores de economía e ingresos.*
+
+```{r}
+#Mapa de europa
+mapview(europa, zcol='economy',color = "red")+
+  mapview(europa, zcol='income_grp',color = "red")+
+  mapview(rangoE, x=rangoE$coords.x1, y=rangoE$coords.x2,legend=FALSE, col.regions='red')
+```
+
+```{r}
+#Mapa de america del sur
+mapview(samerica, zcol='economy',color = "red")+
+  mapview(samerica, zcol='income_grp',color = "red")+
+  mapview(rangoSA, x=rangoSA$coords.x1, y=rangoSA$coords.x2,legend=FALSE, col.regions='red')
+```
+
+```{r}
+#Mapa de america del norte
+mapview(namerica, zcol='economy',color = "red")+
+  mapview(namerica, zcol='income_grp',color = "red")+
+  mapview(rangoNA, x=rangoNA$coords.x1, y=rangoNA$coords.x2,legend=FALSE, col.regions='red')
+```
+
+```{r}
+#Mapa de asia
+mapview(asia, zcol='economy',color = "red")+
+  mapview(asia, zcol='income_grp',color = "red")+
+  mapview(rangoAs, x=rangoAs$coords.x1, y=rangoAs$coords.x2,legend=FALSE, col.regions='red')
+```
+
+```{r}
+#Mapa de africa
+mapview(africa, zcol='economy',color = "red")+
+  mapview(africa, zcol='income_grp',color = "red")+
+  mapview(rangoAf, x=rangoAf$coords.x1, y=rangoAf$coords.x2,legend=FALSE, col.regions='red')
+```
+
+# Resultados y consluión.
+
+### *Lo primero que realizamos, después de entender, limpiar y manipular la data fue ver la relación que hay entre las dos variables estudiadas, economía e ingresos. Al visualizar dicho gráfico se ve que si existe una clara relación entre las variables, para asegurarnos matematicamente de dicha observación se realizó un analisis correlacional. Como se ve en los resultados anteriores la correlación entre la económia e ingresos casi toma el valor de 1, esto evidencia que la observación era correcta. Después calculamos y graficamos la correlación de cada una de las variables con la cantidad de aeropuertos. como se ve en los gráficos en ambos tenemos la misma relación; entre más cantidad de aeropuertos, más ingresos y mejor economía. Por último, se calculó la correlación con cada continente, para asegurarnos que la hipótesis planteada se cumpla en todos los casos.*
+
+### *Posteriormente hicimos un análisis cartográfico. Creamos 5 mapas, uno para cada continente. Cada mapa tiene 5 capas de las cuales 3 de ellas son importantes para nuestro análisis; "continente - economy", "continente - income_grp" y "data". En esta última capa se observan, con puntos rojos, la ubicación de cada aeropuerto en dicho continente. En la capa "continente - economy" se observa, mediante colores, cómo se distribuye la economia en los paises del continente, siendo el color morado los paises que se encuentran en una mejor posición económica, y el color amarillo aquellos paises que tiene un status económico bajo. De igual forma se comporta la capa "continente - income_grp". En esta capa se clasifican, nuevamente a traves de colores, el ingreso que tiene cada pais de dicho continente. siendo el morado aquellos paises que tienen una mayor cantidad de ingresos, y siendo el amarillo aquellos paises que tienen una cantidad de ingresos menor a los del resto del continente. La mayoría de las veces los colores de la capa "continente - economy" y "continente - income_grp" coinciden, debido a la relación directa que hay entre las variables. *
+
+### *A modo de ejemplo, analisaremos África. Como se ve en su gráfico cartográfico, no hay ningun pais de color morado, esto es porque ninguno de sus paises llega al nivel económico ni a la cantidad de ingresos que tienen los demas pasises de los otros continentes. Al ver la capa de "africa - income_grp" y "africa - economy" observamos que los paises que se encuentran en la periferia del contienen son los que tiene un mejor ingreso economico, al igual que aquellos pasies que con una mejor situacion económica. luego, al incorporar la capa de "data" vemos que, a pesar de que si hay aeropuertos en el centro de africa, la mayor cantidad de aeropuertos se concentran en la perifería.*
+
+### *Por lo anteriormente mencionado y con todos los datos y gráficos calculados en el análisis correlacional y cartográfico se llegó a la conlusión que si existe una relación directa entre la cantidad de aeropuertos y el status económico del continente. En otras palabras, mientras mejor economía e ingresos tenga el continente mayor será la cantidad de aeropuestos en dicho continente.*
+
+
+# Integrantes:
+## **Valeria Pichott**
+## **Francisco Reyes**
+## **Moussa Saker**
